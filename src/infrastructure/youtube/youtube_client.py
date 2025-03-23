@@ -76,17 +76,28 @@ class YouTubeLiveController:
         Returns:
             dict: 作成されたブロードキャスト情報
         """
-        # デフォルトの開始時刻を現在から1分後に設定
+        # デフォルトの開始時刻を現在から5分後に設定（余裕を持たせる）
         if start_time is None:
-            start_time = datetime.datetime.now() + datetime.timedelta(minutes=1)
+            start_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)
         
         # start_timeの型を確認し、適切に処理
         if isinstance(start_time, str):
             # 文字列の場合はそのまま使用（すでにISO形式と仮定）
             start_time_iso = start_time
         else:
-            # datetime型の場合はISO形式に変換
-            start_time_iso = start_time.isoformat() + 'Z'  # 'Z'はUTC
+            # datetime型の場合はISO形式に変換、UTCタイムゾーン付きで確実に
+            if start_time.tzinfo is None:
+                # タイムゾーン情報がない場合はUTCを設定
+                start_time = start_time.replace(tzinfo=datetime.timezone.utc)
+            start_time_iso = start_time.isoformat()
+            
+            # ISO形式の末尾に'Z'がない場合は追加（UTCを明示）
+            if not start_time_iso.endswith('Z'):
+                start_time_iso = start_time_iso.replace('+00:00', 'Z')
+                if not start_time_iso.endswith('Z'):
+                    start_time_iso += 'Z'
+        
+        print(f"設定する配信開始時刻: {start_time_iso}")
         
         # ブロードキャストの作成リクエスト
         try:

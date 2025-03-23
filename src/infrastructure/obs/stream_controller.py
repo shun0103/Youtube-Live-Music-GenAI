@@ -5,18 +5,19 @@ import time
 import threading
 import obsws_python as obsws
 import json
+from src.domain.interfaces.obs_interface import StreamControlInterface, SceneManagerInterface
 
-class StreamController:
+class OBSStreamController(StreamControlInterface):
     """OBSの配信を制御するクラス"""
     
-    def __init__(self, client, scene_manager, config_file="config.json"):
+    def __init__(self, client: obsws.ReqClient, scene_manager: SceneManagerInterface, config_file: str = None):
         """
         StreamControllerを初期化する
         
         Args:
             client (obsws.ReqClient): OBS WebSocketリクエストクライアント
-            scene_manager (SceneManager): シーン管理インスタンス
-            config_file (str): 設定ファイルのパス
+            scene_manager (SceneManagerInterface): シーン管理インスタンス
+            config_file (str, optional): 設定ファイルのパス
         """
         self.client = client
         self.scene_manager = scene_manager
@@ -24,24 +25,26 @@ class StreamController:
         self.streaming_event = threading.Event()
         
         # OBS接続情報をconfig.jsonから取得
-        try:
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                conn_params = config.get('obs', {})
-        except Exception as e:
-            print(f"設定ファイルの読み込みエラー: {e}")
-            # デフォルト値を設定
-            conn_params = {
-                "host": "localhost",
-                "port": 4455,
-                "password": ""
-            }
+        host = "localhost"
+        port = 4455
+        password = ""
+        
+        if config_file:
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    obs_config = config.get('obs', {})
+                    host = obs_config.get('host', host)
+                    port = obs_config.get('port', port)
+                    password = obs_config.get('password', password)
+            except Exception as e:
+                print(f"設定ファイルの読み込みエラー: {e}")
         
         # イベントクライアントを作成
         self.event_client = obsws.EventClient(
-            host=conn_params["host"],
-            port=conn_params["port"],
-            password=conn_params["password"]
+            host=host,
+            port=port,
+            password=password
         )
         
         # イベントハンドラを登録
@@ -105,7 +108,7 @@ class StreamController:
         except Exception as e:
             print(f"ストリームイベント処理エラー: {e}")
     
-    def start_streaming(self):
+    def start_streaming(self) -> bool:
         """
         配信を開始する
         
@@ -146,7 +149,7 @@ class StreamController:
                 
             return False
     
-    def stop_streaming(self):
+    def stop_streaming(self) -> bool:
         """
         配信を停止する
         
@@ -182,7 +185,7 @@ class StreamController:
                 
             return False
     
-    def is_streaming(self):
+    def is_streaming(self) -> bool:
         """
         現在配信中かどうかを確認する
         
@@ -224,7 +227,7 @@ class StreamController:
             print(f"配信状態確認エラー: {str(e)}")
             return False
     
-    def wait_for_stream_start(self, timeout=60):
+    def wait_for_stream_start(self, timeout: int = 60) -> bool:
         """
         配信が実際に開始されるまで待機する
         
@@ -261,8 +264,8 @@ class StreamController:
         except Exception as e:
             print(f"配信状態確認エラー: {e}")
             return False
-    
-    def auto_stream_with_scene_switch(self, duration, scenes, interval):
+            
+    def auto_stream_with_scene_switch(self, duration: int, scenes: list, interval: int):
         """
         指定した時間、指定したシーンを順番に切り替えながら配信する
         
@@ -303,116 +306,4 @@ class StreamController:
                 print("OBS WebSocketイベントリスナーをクリア")
                 self.event_client = None
         except Exception as e:
-            print(f"イベントリスナー解放エラー: {str(e)}")
-    
-    def check_streaming_output(self):
-        """
-        現在のOBSストリーミング出力状態を確認する
-        
-        Returns:
-            dict: OBSストリーミング統計情報
-        """
-        try:
-            # ストリーム統計情報を取得
-            response = self.client.send("GetStreamStatus")
-            
-            if hasattr(response, '__dict__'):
-                stats = response.__dict__
-                
-                # 必要な情報を抽出して表示
-                output_active = getattr(response, 'output_active', False)
-                kbits_per_sec = getattr(response, 'kbits_per_sec', 0)
-                congestion = getattr(response, 'congestion', 0)
-                fps = getattr(response, 'fps', 0)
-                reconnecting = getattr(response, 'reconnecting', False)
-                
-                print(f"\n==== OBSストリーム出力統計 ====")
-                print(f"配信状態: {'有効' if output_active else '無効'}")
-                print(f"ビットレート: {kbits_per_sec} kbps")
-                print(f"混雑度: {congestion:.2f}")
-                print(f"FPS: {fps}")
-                print(f"再接続中: {'はい' if reconnecting else 'いいえ'}")
-                
-                # ビットレートが低すぎる場合は警告
-                if output_active and kbits_per_sec < 500:
-                    print(f"警告: ビットレートが低すぎます！({kbits_per_sec} kbps)")
-                    print("OBSの出力設定 > ストリーミングでビットレートを確認してください。")
-                    
-                # 混雑度が高すぎる場合は警告
-                if output_active and congestion > 0.8:
-                    print(f"警告: ネットワーク混雑度が高すぎます！({congestion:.2f})")
-                    print("インターネット接続またはOBSのビットレート設定を確認してください。")
-                    
-                # FPSが低すぎる場合は警告
-                if output_active and fps < 15:
-                    print(f"警告: FPSが低すぎます！({fps})")
-                    print("コンピュータの負荷またはOBSのFPS設定を確認してください。")
-                
-                return {
-                    "output_active": output_active,
-                    "kbits_per_sec": kbits_per_sec,
-                    "congestion": congestion,
-                    "fps": fps,
-                    "reconnecting": reconnecting
-                }
-            
-            return {"output_active": False}
-        except Exception as e:
-            print(f"ストリーム統計取得エラー: {str(e)}")
-            return {"output_active": False, "error": str(e)}
-    
-    def monitor_stream_health(self, duration=30, interval=5):
-        """
-        指定した期間、ストリーム状態を監視する
-        
-        Args:
-            duration (int): 監視時間（秒）
-            interval (int): チェック間隔（秒）
-            
-        Returns:
-            bool: 問題がなければTrue、問題があればFalse
-        """
-        if not self.is_streaming():
-            print("ストリームが開始されていないため、監視を開始できません")
-            return False
-        
-        print(f"\n配信状態を{duration}秒間監視します（{interval}秒間隔）...")
-        start_time = time.time()
-        all_ok = True
-        
-        try:
-            while time.time() - start_time < duration:
-                remaining = int(duration - (time.time() - start_time))
-                print(f"\n残り{remaining}秒の監視...")
-                
-                # ストリーム統計情報を取得
-                stats = self.check_streaming_output()
-                
-                # 出力がアクティブでないか、ビットレートが0の場合は問題があるとみなす
-                if (not stats.get("output_active", False) or 
-                    stats.get("kbits_per_sec", 0) < 100):
-                    print(f"警告: ストリーム出力に問題が検出されました！")
-                    print("OBSが映像データを正しく送信していない可能性があります。")
-                    all_ok = False
-                
-                # 混雑度が非常に高い場合
-                if stats.get("congestion", 0) > 0.9:
-                    print(f"警告: ネットワーク混雑度が非常に高いです！")
-                    print("インターネット接続が不安定かもしれません。")
-                    all_ok = False
-                
-                time.sleep(interval)
-            
-            if all_ok:
-                print("\nストリーム監視完了: 問題は検出されませんでした")
-            else:
-                print("\nストリーム監視完了: 問題が検出されました")
-                print("OBSの設定とビデオソースを確認してください")
-            
-            return all_ok
-        except KeyboardInterrupt:
-            print("\nユーザーによって監視が中断されました")
-            return False
-        except Exception as e:
-            print(f"\nストリーム監視エラー: {str(e)}")
-            return False 
+            print(f"イベントリスナー解放エラー: {str(e)}") 

@@ -2,8 +2,9 @@
 OBS WebSocket接続を管理するモジュール
 """
 import obsws_python as obsws
+from src.domain.interfaces.obs_interface import OBSConnectionInterface
 
-class OBSConnection:
+class OBSClient(OBSConnectionInterface):
     """OBS WebSocketサーバーへの接続を管理するクラス"""
     
     def __init__(self, host="localhost", port=4455, password=""):
@@ -21,7 +22,12 @@ class OBSConnection:
         self.client = None
     
     def connect(self):
-        """OBS WebSocketサーバーに接続する"""
+        """
+        OBS WebSocketサーバーに接続する
+        
+        Returns:
+            obsws.ReqClient: 接続済みのクライアントインスタンス
+        """
         self.client = obsws.ReqClient(
             host=self.host, 
             port=self.port, 
